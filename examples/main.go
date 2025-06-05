@@ -59,7 +59,7 @@ func main() {
 
 	// Example 5: Get related entities
 	if len(searchResults) > 0 {
-		query := &models.RelationQuery{
+		query := &models.Relationship{
 			RelatedEntityID: "some-other-entity",
 			StartTime:       time.Now().Format(time.RFC3339),
 			EndTime:         time.Now().Add(24 * time.Hour).Format(time.RFC3339),

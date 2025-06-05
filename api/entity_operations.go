@@ -70,7 +70,9 @@ func (c *Client) AddEntity(transaction map[string]interface{}, entityCounters ma
 		Name: parent,
 	}
 
+	fmt.Printf("[AddEntity] Searching for parent with criteria: %+v\n", searchCriteria)
 	searchResults, err := c.SearchEntities(searchCriteria)
+	fmt.Printf("[AddEntity] Search Results: %+v\n", searchResults)
 	if err != nil {
 		return 0, fmt.Errorf("failed to search for parent entity: %w", err)
 	}
@@ -117,7 +119,7 @@ func (c *Client) AddEntity(transaction map[string]interface{}, entityCounters ma
 		Attributes: []models.AttributeEntry{},
 		Relationships: []models.RelationshipEntry{
 			{
-				Key: relType,
+				Key: fmt.Sprintf("%s_%s", parentID, createdChild.ID),
 				Value: models.Relationship{
 					RelatedEntityID: createdChild.ID,
 					StartTime:       dateISO,

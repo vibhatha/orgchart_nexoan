@@ -2,8 +2,10 @@ package api
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -152,6 +154,8 @@ func (c *Client) SearchEntities(criteria *models.SearchCriteria) ([]models.Searc
 		return nil, fmt.Errorf("failed to marshal search criteria: %w", err)
 	}
 
+	fmt.Printf("[SearchEntities] Request payload: %s\n", string(jsonData))
+
 	resp, err := c.httpClient.Post(
 		fmt.Sprintf("%s/search", c.queryURL),
 		"application/json",
@@ -166,11 +170,45 @@ func (c *Client) SearchEntities(criteria *models.SearchCriteria) ([]models.Searc
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
+	// Read the raw response body
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	fmt.Printf("[SearchEntities] Raw response: %s\n", string(bodyBytes))
+
 	var response models.SearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+	if err := json.Unmarshal(bodyBytes, &response); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	fmt.Printf("[SearchEntities] Initial response: %+v\n", response.Body)
+
+	// Decode the name field for each search result
+	for i := range response.Body {
+		fmt.Printf("[SearchEntities] Processing name: %s\n", response.Body[i].Name)
+		// The name is already a JSON string containing a protobuf object
+		var protobufName struct {
+			TypeURL string `json:"typeUrl"`
+			Value   string `json:"value"`
+		}
+		if err := json.Unmarshal([]byte(response.Body[i].Name), &protobufName); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal protobuf name: %w", err)
+		}
+
+		fmt.Printf("[SearchEntities] Protobuf name: %+v\n", protobufName)
+
+		// Convert hex to string
+		decoded, err := hex.DecodeString(protobufName.Value)
+		if err != nil {
+			fmt.Printf("[SearchEntities] Hex decode error for value: %s\n", protobufName.Value)
+			return nil, fmt.Errorf("failed to decode hex value: %w", err)
+		}
+		response.Body[i].Name = string(decoded)
+		fmt.Printf("[SearchEntities] Decoded name: %s\n", response.Body[i].Name)
+	}
+
+	fmt.Printf("[SearchEntities] Final response: %+v\n", response.Body)
 	return response.Body, nil
 }
 
@@ -221,7 +259,7 @@ func (c *Client) GetEntityAttribute(entityID, attributeName string, startTime, e
 }
 
 // GetRelatedEntities gets related entity IDs based on query parameters
-func (c *Client) GetRelatedEntities(entityID string, query *models.RelationQuery) ([]models.Relation, error) {
+func (c *Client) GetRelatedEntities(entityID string, query *models.Relationship) ([]models.Relationship, error) {
 	jsonData, err := json.Marshal(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal query: %w", err)
@@ -241,7 +279,7 @@ func (c *Client) GetRelatedEntities(entityID string, query *models.RelationQuery
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var relations []models.Relation
+	var relations []models.Relationship
 	if err := json.NewDecoder(resp.Body).Decode(&relations); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
@@ -250,7 +288,7 @@ func (c *Client) GetRelatedEntities(entityID string, query *models.RelationQuery
 }
 
 // GetAllRelatedEntities gets all related entity IDs without filters
-func (c *Client) GetAllRelatedEntities(entityID string) ([]models.Relation, error) {
+func (c *Client) GetAllRelatedEntities(entityID string) ([]models.Relationship, error) {
 	resp, err := c.httpClient.Post(
 		fmt.Sprintf("%s/%s/allrelations", c.queryURL, entityID),
 		"application/json",
@@ -265,7 +303,7 @@ func (c *Client) GetAllRelatedEntities(entityID string) ([]models.Relation, erro
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var relations []models.Relation
+	var relations []models.Relationship
 	if err := json.NewDecoder(resp.Body).Decode(&relations); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
