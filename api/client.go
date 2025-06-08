@@ -265,8 +265,12 @@ func (c *Client) GetRelatedEntities(entityID string, query *models.Relationship)
 		return nil, fmt.Errorf("failed to marshal query: %w", err)
 	}
 
+	// URL encode the entity ID to handle special characters like slashes
+	encodedID := url.QueryEscape(entityID)
+
+	fmt.Printf("[GetRelatedEntities] Request payload: %s\n", string(jsonData))
 	resp, err := c.httpClient.Post(
-		fmt.Sprintf("%s/%s/relations", c.queryURL, entityID),
+		fmt.Sprintf("%s/%s/relations", c.queryURL, encodedID),
 		"application/json",
 		bytes.NewBuffer(jsonData),
 	)
@@ -276,7 +280,8 @@ func (c *Client) GetRelatedEntities(entityID string, query *models.Relationship)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var relations []models.Relationship
@@ -289,8 +294,12 @@ func (c *Client) GetRelatedEntities(entityID string, query *models.Relationship)
 
 // GetAllRelatedEntities gets all related entity IDs without filters
 func (c *Client) GetAllRelatedEntities(entityID string) ([]models.Relationship, error) {
+	// URL encode the entity ID to handle special characters like slashes
+	encodedID := url.QueryEscape(entityID)
+
+	fmt.Printf("[GetAllRelatedEntities] Request payload: %s\n", encodedID)
 	resp, err := c.httpClient.Post(
-		fmt.Sprintf("%s/%s/allrelations", c.queryURL, entityID),
+		fmt.Sprintf("%s/%s/allrelations", c.queryURL, encodedID),
 		"application/json",
 		nil,
 	)

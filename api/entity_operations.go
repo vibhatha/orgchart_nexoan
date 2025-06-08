@@ -138,3 +138,95 @@ func (c *Client) AddEntity(transaction map[string]interface{}, entityCounters ma
 
 	return entityCounter, nil
 }
+
+// TerminateEntity terminates a specific relationship between parent and child at a given date
+func (c *Client) TerminateEntity(transaction map[string]interface{}) error {
+	// Extract details from the transaction
+	parent := transaction["parent"].(string)
+	child := transaction["child"].(string)
+	dateStr := transaction["date"].(string)
+	parentType := transaction["parent_type"].(string)
+	childType := transaction["child_type"].(string)
+	relType := transaction["rel_type"].(string)
+
+	// Parse the date
+	date, err := time.Parse("2006-01-02", strings.TrimSpace(dateStr))
+	if err != nil {
+		return fmt.Errorf("failed to parse date: %w", err)
+	}
+	dateISO := date.Format(time.RFC3339)
+
+	// Get the parent entity ID
+	searchCriteria := &models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: parentType,
+		},
+		Name: parent,
+	}
+	parentResults, err := c.SearchEntities(searchCriteria)
+	if err != nil {
+		return fmt.Errorf("failed to search for parent entity: %w", err)
+	}
+	if len(parentResults) == 0 {
+		return fmt.Errorf("parent entity not found: %s", parent)
+	}
+	parentID := parentResults[0].ID
+
+	// Get the child entity ID
+	searchCriteria.Kind.Minor = childType
+	searchCriteria.Name = child
+	childResults, err := c.SearchEntities(searchCriteria)
+	if err != nil {
+		return fmt.Errorf("failed to search for child entity: %w", err)
+	}
+	if len(childResults) == 0 {
+		return fmt.Errorf("child entity not found: %s", child)
+	}
+	childID := childResults[0].ID
+
+	// Get the specific relationship that is still active (no end date) -> this should give us the relationship(s) active for dateISO
+	relations, err := c.GetRelatedEntities(parentID, &models.Relationship{
+		RelatedEntityID: childID,
+		Name:            relType,
+		StartTime:       dateISO,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get relationship: %w", err)
+	}
+
+	fmt.Printf("[TerminateEntity] Relationships: for %s and %s with type %s: %+v\n", parentID, childID, relType, relations)
+
+	// FIXME: Is it possible to have more than one active relationshoip? For orgchart case only it won't happen
+	// Find the active relationship (no end time)
+	var activeRel *models.Relationship
+	for _, rel := range relations {
+		if rel.EndTime == "" {
+			activeRel = &rel
+			break
+		}
+	}
+
+	if activeRel == nil {
+		return fmt.Errorf("no active relationship found between %s and %s with type %s", parentID, childID, relType)
+	}
+
+	// Update the relationship to set the end date
+	_, err = c.UpdateEntity(parentID, &models.Entity{
+		ID: parentID,
+		Relationships: []models.RelationshipEntry{
+			{
+				Key: activeRel.ID,
+				Value: models.Relationship{
+					EndTime: dateISO,
+					ID:      activeRel.ID,
+				},
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to terminate relationship: %w", err)
+	}
+
+	return nil
+}

@@ -57,7 +57,7 @@ type RelationshipEntry struct {
 type Relationship struct {
 	RelatedEntityID string `json:"relatedEntityId"`
 	StartTime       string `json:"startTime"`
-	EndTime         string `json:"endTime,omitempty"`
+	EndTime         string `json:"endTime"`
 	ID              string `json:"id"`
 	Name            string `json:"name"`
 }
