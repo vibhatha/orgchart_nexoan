@@ -331,4 +331,82 @@ func TestTerminateMinister(t *testing.T) {
 	assert.True(t, found, "Should find the terminated relationship")
 }
 
+func TestMoveDepartment(t *testing.T) {
+	// Create transaction map for moving the department
+	transaction := map[string]interface{}{
+		"old_parent": "Minister of Finance, Economic and Policy Development",
+		"new_parent": "Minister of Defence",
+		"child":      "Department of Policies",
+		"type":       "AS_DEPARTMENT",
+		"date":       "2024-01-01",
+	}
+
+	// Move the department
+	err := client.MoveDepartment(transaction)
+	assert.NoError(t, err)
+
+	// Find the new minister to verify the new relationship
+	newMinisterResults, err := client.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: "Minister of Defence",
+	})
+	assert.NoError(t, err)
+	assert.Len(t, newMinisterResults, 1)
+	newMinisterID := newMinisterResults[0].ID
+
+	// Find the department
+	departmentResults, err := client.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "department",
+		},
+		Name: "Department of Policies",
+	})
+	assert.NoError(t, err)
+	assert.Len(t, departmentResults, 1)
+	departmentID := departmentResults[0].ID
+
+	// Verify the new relationship exists
+	allRelations, err := client.GetAllRelatedEntities(newMinisterID)
+	assert.NoError(t, err)
+	found := false
+	for _, rel := range allRelations {
+		if rel.RelatedEntityID == departmentID && rel.Name == "AS_DEPARTMENT" {
+			assert.Equal(t, "2024-01-01T00:00:00Z", rel.StartTime)
+			assert.Equal(t, "", rel.EndTime) // Should be active (no end time)
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find the new relationship")
+
+	// Find the old minister to verify the old relationship is terminated
+	oldMinisterResults, err := client.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: "Minister of Finance, Economic and Policy Development",
+	})
+	assert.NoError(t, err)
+	assert.Len(t, oldMinisterResults, 1)
+	oldMinisterID := oldMinisterResults[0].ID
+
+	// Verify the old relationship is terminated
+	oldRelations, err := client.GetAllRelatedEntities(oldMinisterID)
+	assert.NoError(t, err)
+	found = false
+	for _, rel := range oldRelations {
+		if rel.RelatedEntityID == departmentID && rel.Name == "AS_DEPARTMENT" {
+			assert.Equal(t, "2024-01-01T00:00:00Z", rel.EndTime)
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find the terminated old relationship")
+}
+
 // TODO: Test that it fails and returns proper error messages when trying to terminate an entity with children
