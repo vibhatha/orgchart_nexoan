@@ -25,7 +25,7 @@ func main() {
 	// }
 	// fmt.Printf("Successfully created government node with ID: %s\n", government.ID)
 
-	// err = client.ProcessTransactions(dataDir)
+	// err = client.ProcessTransactions(dataDMir)
 	// if err != nil {
 	// 	log.Fatalf("Failed to process transactions: %v", err)
 	// }
