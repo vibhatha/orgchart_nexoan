@@ -201,7 +201,7 @@ func (c *Client) TerminateEntity(transaction map[string]interface{}) error {
 	// Find the active relationship (no end time)
 	var activeRel *models.Relationship
 	for _, rel := range relations {
-		if rel.EndTime == "" {
+		if rel.RelatedEntityID == childID && rel.EndTime == "" {
 			activeRel = &rel
 			break
 		}
@@ -263,6 +263,8 @@ func (c *Client) MoveDepartment(transaction map[string]interface{}) error {
 	}
 	newParentID := newParentResults[0].ID
 
+	fmt.Printf("Found new parent entity with ID: %s\n", newParentID)
+
 	// Get the department (child) entity ID
 	childResults, err := c.SearchEntities(&models.SearchCriteria{
 		Kind: &models.Kind{
@@ -278,6 +280,8 @@ func (c *Client) MoveDepartment(transaction map[string]interface{}) error {
 		return fmt.Errorf("child entity not found: %s", child)
 	}
 	childID := childResults[0].ID
+
+	fmt.Printf("Found new child entity with ID: %s\n", childID)
 
 	// Create new relationship between new minister and department
 	newRelationship := &models.Entity{
@@ -311,10 +315,165 @@ func (c *Client) MoveDepartment(transaction map[string]interface{}) error {
 		"rel_type":    relType,
 	}
 
+	fmt.Printf("Terminating relationship with transaction: %+v\n", terminateTransaction)
+
 	err = c.TerminateEntity(terminateTransaction)
 	if err != nil {
 		return fmt.Errorf("failed to terminate old relationship: %w", err)
 	}
 
 	return nil
+}
+
+// RenameMinister renames a minister and transfers all its departments to the new minister
+func (c *Client) RenameMinister(transaction map[string]interface{}, entityCounters map[string]int) (int, error) {
+	// Extract details from the transaction
+	oldName := transaction["old"].(string)
+	newName := transaction["new"].(string)
+	dateStr := transaction["date"].(string)
+	relType := transaction["type"].(string)
+	transactionID := transaction["transaction_id"]
+
+	// Parse the date
+	date, err := time.Parse("2006-01-02", strings.TrimSpace(dateStr))
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse date: %w", err)
+	}
+	dateISO := date.Format(time.RFC3339)
+
+	// Get the old minister's ID
+	oldMinisterResults, err := c.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: oldName,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to search for old minister: %w", err)
+	}
+	if len(oldMinisterResults) == 0 {
+		return 0, fmt.Errorf("old minister not found: %s", oldName)
+	}
+	oldMinisterID := oldMinisterResults[0].ID
+
+	// Create new minister
+	addEntityTransaction := map[string]interface{}{
+		"parent":         "Government of Sri Lanka",
+		"child":          newName,
+		"date":           dateStr,
+		"parent_type":    "government",
+		"child_type":     "minister",
+		"rel_type":       relType,
+		"transaction_id": transactionID,
+	}
+
+	// Create the new minister
+	newMinisterCounter, err := c.AddEntity(addEntityTransaction, entityCounters)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create new minister: %w", err)
+	}
+
+	// Get the new minister's ID
+	newMinisterResults, err := c.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: newName,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to search for new minister: %w", err)
+	}
+	if len(newMinisterResults) == 0 {
+		return 0, fmt.Errorf("new minister not found: %s", newName)
+	}
+	newMinisterID := newMinisterResults[0].ID
+
+	// Get all active departments of the old minister
+	oldRelations, err := c.GetAllRelatedEntities(oldMinisterID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get old minister's relationships: %w", err)
+	}
+
+	// Transfer each active department to the new minister
+	for _, rel := range oldRelations {
+		if rel.Name == "AS_DEPARTMENT" && rel.EndTime == "" {
+			// Create new relationship between new minister and department
+			newRelationship := &models.Entity{
+				ID: newMinisterID,
+				Relationships: []models.RelationshipEntry{
+					{
+						Key: fmt.Sprintf("%s_%s", newMinisterID, rel.RelatedEntityID),
+						Value: models.Relationship{
+							RelatedEntityID: rel.RelatedEntityID,
+							StartTime:       dateISO,
+							EndTime:         "",
+							ID:              fmt.Sprintf("%s_%s", newMinisterID, rel.RelatedEntityID),
+							Name:            "AS_DEPARTMENT",
+						},
+					},
+				},
+			}
+
+			_, err = c.UpdateEntity(newMinisterID, newRelationship)
+			if err != nil {
+				return 0, fmt.Errorf("failed to create new department relationship: %w", err)
+			}
+
+			// Terminate the old relationship
+			terminateTransaction := map[string]interface{}{
+				"parent":      oldName,
+				"child":       rel.RelatedEntityID,
+				"date":        dateStr,
+				"parent_type": "minister",
+				"child_type":  "department",
+				"rel_type":    "AS_DEPARTMENT",
+			}
+
+			err = c.TerminateEntity(terminateTransaction)
+			if err != nil {
+				return 0, fmt.Errorf("failed to terminate old department relationship: %w", err)
+			}
+		}
+	}
+
+	// Terminate the old minister's relationship with government
+	terminateGovTransaction := map[string]interface{}{
+		"parent":      "Government of Sri Lanka",
+		"child":       oldName,
+		"date":        dateStr,
+		"parent_type": "government",
+		"child_type":  "minister",
+		"rel_type":    relType,
+	}
+
+	err = c.TerminateEntity(terminateGovTransaction)
+	if err != nil {
+		return 0, fmt.Errorf("failed to terminate old minister's government relationship: %w", err)
+	}
+
+	// Create RENAMED_TO relationship
+	renameRelationship := &models.Entity{
+		ID: oldMinisterID,
+		Relationships: []models.RelationshipEntry{
+			{
+				Key: fmt.Sprintf("%s_%s", oldMinisterID, newMinisterID),
+				Value: models.Relationship{
+					RelatedEntityID: newMinisterID,
+					StartTime:       dateISO,
+					EndTime:         "",
+					ID:              fmt.Sprintf("%s_%s", oldMinisterID, newMinisterID),
+					Name:            "RENAMED_TO",
+				},
+			},
+		},
+	}
+
+	_, err = c.UpdateEntity(oldMinisterID, renameRelationship)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create RENAMED_TO relationship: %w", err)
+	}
+
+	return newMinisterCounter, nil
 }
