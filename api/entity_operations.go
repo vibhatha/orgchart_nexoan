@@ -318,3 +318,327 @@ func (c *Client) MoveDepartment(transaction map[string]interface{}) error {
 
 	return nil
 }
+
+// AddPersonEntity creates a new person entity and establishes its relationship with a parent entity.
+// Assumes the parent entity already exists.
+func (c *Client) AddPersonEntity(transaction map[string]interface{}, entityCounters map[string]int) (int, error) {
+	// Extract details from the transaction
+	parent := transaction["parent"].(string)
+	child := transaction["child"].(string)
+	dateStr := transaction["date"].(string)
+	parentType := transaction["parent_type"].(string)
+	childType := transaction["child_type"].(string)
+	relType := transaction["rel_type"].(string)
+	transactionID := transaction["transaction_id"].(string)
+
+	// Parse the date
+	date, err := time.Parse("2006-01-02", strings.TrimSpace(dateStr))
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse date: %w", err)
+	}
+	dateISO := date.Format(time.RFC3339)
+
+	// Get the parent entity ID
+	searchCriteria := &models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: parentType,
+		},
+		Name: parent,
+	}
+
+	fmt.Printf("[AddPersonEntity] Searching for parent with criteria: %+v\n", searchCriteria)
+	searchResults, err := c.SearchEntities(searchCriteria)
+	fmt.Printf("[AddPersonEntity] Search Results: %+v\n", searchResults)
+	if err != nil {
+		return 0, fmt.Errorf("failed to search for parent entity: %w", err)
+	}
+
+	if len(searchResults) == 0 {
+		return 0, fmt.Errorf("parent entity not found: %s", parent)
+	}
+
+	parentID := searchResults[0].ID
+	fmt.Println("Parent ID: ", parentID)
+
+	// Check if person already exists (search across all person types)
+	personSearchCriteria := &models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Person",
+		},
+		Name: child,
+	}
+
+	personResults, err := c.SearchEntities(personSearchCriteria)
+	if err != nil {
+		return 0, fmt.Errorf("failed to search for person entity: %w", err)
+	}
+
+	if len(personResults) > 1 {
+		return 0, fmt.Errorf("multiple entities found for person: %s", child)
+	}
+
+	var childID string
+	if len(personResults) == 1 {
+		// Person exists, use existing ID
+		childID = personResults[0].ID
+	} else {
+		// Generate new entity ID
+		if _, exists := entityCounters[childType]; !exists {
+			return 0, fmt.Errorf("unknown child type: %s", childType)
+		}
+
+		prefix := fmt.Sprintf("%s_%s", transactionID[:7], strings.ToLower(childType[:3]))
+		entityCounter := entityCounters[childType] + 1
+		newEntityID := fmt.Sprintf("%s_%d", prefix, entityCounter)
+
+		// Create the new child entity
+		childEntity := &models.Entity{
+			ID: newEntityID,
+			Kind: models.Kind{
+				Major: "Person",
+				Minor: childType,
+			},
+			Created:    dateISO,
+			Terminated: "",
+			Name: models.TimeBasedValue{
+				StartTime: dateISO,
+				Value:     child,
+			},
+			Metadata:      []models.MetadataEntry{},
+			Attributes:    []models.AttributeEntry{},
+			Relationships: []models.RelationshipEntry{},
+		}
+
+		// Create the child entity
+		createdChild, err := c.CreateEntity(childEntity)
+		if err != nil {
+			return 0, fmt.Errorf("failed to create child entity: %w", err)
+		}
+		childID = createdChild.ID
+	}
+
+	// Update the parent entity to add the relationship to the child
+	parentEntity := &models.Entity{
+		ID:         parentID,
+		Kind:       models.Kind{},
+		Created:    "",
+		Terminated: "",
+		Name:       models.TimeBasedValue{},
+		Metadata:   []models.MetadataEntry{},
+		Attributes: []models.AttributeEntry{},
+		Relationships: []models.RelationshipEntry{
+			{
+				Key: fmt.Sprintf("%s_%s", parentID, childID),
+				Value: models.Relationship{
+					RelatedEntityID: childID,
+					StartTime:       dateISO,
+					EndTime:         "",
+					ID:              fmt.Sprintf("%s_%s", parentID, childID),
+					Name:            relType,
+				},
+			},
+		},
+	}
+
+	_, err = c.UpdateEntity(parentID, parentEntity)
+	if err != nil {
+		return 0, fmt.Errorf("failed to update parent entity: %w", err)
+	}
+
+	return entityCounters[childType] + 1, nil
+}
+
+// TerminateEntity terminates a specific relationship between parent and child at a given date
+func (c *Client) TerminatePersonEntity(transaction map[string]interface{}) error {
+	// Extract details from the transaction
+	parent := transaction["parent"].(string)
+	child := transaction["child"].(string)
+	dateStr := transaction["date"].(string)
+	parentType := transaction["parent_type"].(string)
+	childType := transaction["child_type"].(string)
+	relType := transaction["rel_type"].(string)
+
+	// Parse the date
+	date, err := time.Parse("2006-01-02", strings.TrimSpace(dateStr))
+	if err != nil {
+		return fmt.Errorf("failed to parse date: %w", err)
+	}
+	dateISO := date.Format(time.RFC3339)
+
+	// Get the parent entity ID
+	parentSearchCriteria := &models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: parentType,
+		},
+		Name: parent,
+	}
+	parentResults, err := c.SearchEntities(parentSearchCriteria)
+	if err != nil {
+		return fmt.Errorf("failed to search for parent entity: %w", err)
+	}
+	if len(parentResults) == 0 {
+		return fmt.Errorf("parent entity not found: %s", parent)
+	}
+	parentID := parentResults[0].ID
+
+	// Get the child entity ID
+	childSearchCriteria := &models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Person",
+			Minor: childType,
+		},
+		Name: child,
+	}
+
+	fmt.Printf("[TerminatePersonEntity] Searching for child with criteria: %+v\n", childSearchCriteria)
+	childResults, err := c.SearchEntities(childSearchCriteria)
+	if err != nil {
+		return fmt.Errorf("failed to search for child entity: %w", err)
+	}
+	if len(childResults) == 0 {
+		return fmt.Errorf("child entity not found: %s", child)
+	}
+	childID := childResults[0].ID
+
+	// Get the specific relationship that is still active (no end date) -> this should give us the relationship(s) active for dateISO
+	relations, err := c.GetRelatedEntities(parentID, &models.Relationship{
+		RelatedEntityID: childID,
+		Name:            relType,
+		StartTime:       dateISO,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get relationship: %w", err)
+	}
+
+	fmt.Printf("[TerminateEntity] Relationships: for %s and %s with type %s: %+v\n", parentID, childID, relType, relations)
+
+	// FIXME: Is it possible to have more than one active relationshoip? For orgchart case only it won't happen
+	// Find the active relationship (no end time)
+	var activeRel *models.Relationship
+	for _, rel := range relations {
+		if rel.EndTime == "" {
+			activeRel = &rel
+			break
+		}
+	}
+
+	if activeRel == nil {
+		return fmt.Errorf("no active relationship found between %s and %s with type %s", parentID, childID, relType)
+	}
+
+	// Update the relationship to set the end date
+	fmt.Printf("[TerminatePersonEntity] Updating relationship: %+v\n", activeRel)
+	fmt.Printf("[TerminatePersonEntity] Parent ID: %s\n", parentID)
+	fmt.Printf("[TerminatePersonEntity] Child ID: %s\n", childID)
+	fmt.Printf("[TerminatePersonEntity] Date: %s\n", dateISO)
+	fmt.Printf("[TerminatePersonEntity] Relationship: %+v\n", activeRel.RelatedEntityID)
+	fmt.Printf("[TerminatePersonEntity] Relationship ID: %s\n", activeRel.ID)
+
+	_, err = c.UpdateEntity(parentID, &models.Entity{
+		ID: parentID,
+		Relationships: []models.RelationshipEntry{
+			{
+				Key: activeRel.ID,
+				Value: models.Relationship{
+					EndTime: dateISO,
+					ID:      activeRel.ID,
+				},
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to terminate relationship: %w", err)
+	}
+
+	return nil
+}
+
+// MovePerson moves a person from one portfolio to another
+func (c *Client) MovePerson(transaction map[string]interface{}) error {
+	// Extract details from the transaction
+	newParent := transaction["new_parent"].(string)
+	oldParent := transaction["old_parent"].(string)
+	child := transaction["child"].(string)
+	dateStr := transaction["date"].(string)
+	relType := transaction["type"].(string)
+
+	// Parse the date
+	date, err := time.Parse("2006-01-02", strings.TrimSpace(dateStr))
+	if err != nil {
+		return fmt.Errorf("failed to parse date: %w", err)
+	}
+	dateISO := date.Format(time.RFC3339)
+
+	// Get the new minister (parent) entity ID
+	newParentResults, err := c.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: newParent,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to search for new parent entity: %w", err)
+	}
+	if len(newParentResults) == 0 {
+		return fmt.Errorf("new parent entity not found: %s", newParent)
+	}
+	newParentID := newParentResults[0].ID
+
+	// Get the person (child) entity ID
+	childResults, err := c.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Person",
+			Minor: "citizen",
+		},
+		Name: child,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to search for child entity: %w", err)
+	}
+	if len(childResults) == 0 {
+		return fmt.Errorf("child entity not found: %s", child)
+	}
+	childID := childResults[0].ID
+
+	// Create new relationship between new minister and department
+	newRelationship := &models.Entity{
+		ID: newParentID,
+		Relationships: []models.RelationshipEntry{
+			{
+				Key: fmt.Sprintf("%s_%s", newParentID, childID),
+				Value: models.Relationship{
+					RelatedEntityID: childID,
+					StartTime:       dateISO,
+					EndTime:         "",
+					ID:              fmt.Sprintf("%s_%s", newParentID, childID),
+					Name:            relType,
+				},
+			},
+		},
+	}
+
+	_, err = c.UpdateEntity(newParentID, newRelationship)
+	if err != nil {
+		return fmt.Errorf("failed to create new relationship: %w", err)
+	}
+
+	// Terminate the old relationship
+	terminateTransaction := map[string]interface{}{
+		"parent":      oldParent,
+		"child":       child,
+		"date":        dateStr,
+		"parent_type": "minister",
+		"child_type":  "department",
+		"rel_type":    relType,
+	}
+
+	err = c.TerminateEntity(terminateTransaction)
+	if err != nil {
+		return fmt.Errorf("failed to terminate old relationship: %w", err)
+	}
+
+	return nil
+}

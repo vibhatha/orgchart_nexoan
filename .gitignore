@@ -1,2 +1,5 @@
 /.vscode
 /update_orgchart.py
+
+data/.DS_Store
+data/people/.DS_Store
