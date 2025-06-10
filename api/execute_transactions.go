@@ -11,11 +11,20 @@ import (
 )
 
 // ProcessTransactions processes all transactions from CSV files in the specified directory
-func (c *Client) ProcessTransactions(dataDir string) error {
-	// Initialize entity counters
-	entityCounters := map[string]int{
-		"minister":   0,
-		"department": 0,
+func (c *Client) ProcessTransactions(dataDir string, processType string) error {
+	// Initialize entity counters based on process type
+	var entityCounters map[string]int
+	if processType == "organisation" {
+		entityCounters = map[string]int{
+			"minister":   0,
+			"department": 0,
+		}
+	} else if processType == "person" {
+		entityCounters = map[string]int{
+			"citizen": 0,
+		}
+	} else {
+		return fmt.Errorf("invalid process type: %s", processType)
 	}
 
 	// Get all CSV files in the directory
@@ -28,17 +37,23 @@ func (c *Client) ProcessTransactions(dataDir string) error {
 	var allTransactions []map[string]interface{}
 	for _, file := range files {
 		if !file.IsDir() && strings.HasSuffix(file.Name(), ".csv") {
-			// Extract file type from filename (e.g., "ADD" from "ADD.csv")
-			fileType := strings.TrimSuffix(file.Name(), ".csv")
+			// Check if file contains ADD in its name (either as _ADD.csv or ADD.csv)
+			fileName := strings.TrimSuffix(file.Name(), ".csv")
+			if fileName == "ADD" || strings.HasSuffix(fileName, "_ADD") {
+				// Extract file type from filename (e.g., "ADD" from "2403-38_ADD.csv" or "ADD.csv")
+				fileType := "ADD" // All files with ADD are considered ADD transactions
 
-			// Load transactions from the CSV file
-			transactions, err := loadTransactions(filepath.Join(dataDir, file.Name()), fileType)
-			if err != nil {
-				return fmt.Errorf("failed to load transactions from %s: %w", file.Name(), err)
+				// Load transactions from the CSV file
+				transactions, err := loadTransactions(filepath.Join(dataDir, file.Name()), fileType)
+				if err != nil {
+					return fmt.Errorf("failed to load transactions from %s: %w", file.Name(), err)
+				}
+				allTransactions = append(allTransactions, transactions...)
 			}
-			allTransactions = append(allTransactions, transactions...)
 		}
 	}
+
+	fmt.Printf("Number of transactions: %d\n", len(allTransactions))
 
 	// Sort transactions by transaction_id, handling numeric parts correctly
 	sort.Slice(allTransactions, func(i, j int) bool {
@@ -73,12 +88,34 @@ func (c *Client) ProcessTransactions(dataDir string) error {
 	for _, transaction := range allTransactions {
 		// For now, only process ADD transactions
 		if transaction["file_type"] == "ADD" {
-			newCounter, err := c.AddOrgEntity(transaction, entityCounters)
-			if err != nil {
-				return fmt.Errorf("failed to process add transaction %s: %w", transaction["transaction_id"], err)
+			// Check if the transaction type matches the process type
+			childType := transaction["child_type"].(string)
+			fmt.Printf("Processing transaction: %s\n", transaction["transaction_id"])
+			fmt.Printf("Child type: %s\n", childType)
+			fmt.Printf("Process type: %s\n", processType)
+
+			if (processType == "organisation" && (childType == "minister" || childType == "department")) ||
+				(processType == "person" && childType == "citizen") {
+				var newCounter int
+				var err error
+
+				if processType == "person" && childType == "citizen" {
+					newCounter, err = c.AddPersonEntity(transaction, entityCounters)
+				} else {
+					newCounter, err = c.AddOrgEntity(transaction, entityCounters)
+				}
+
+				if err != nil {
+					return fmt.Errorf("failed to process add transaction %s: %w", transaction["transaction_id"], err)
+				}
+				entityCounters[childType] = newCounter
+				fmt.Printf("Processed Add transaction: %s\n", transaction["transaction_id"])
+			} else {
+				fmt.Printf("Skipping transaction %s: type %s does not match process type %s\n",
+					transaction["transaction_id"], childType, processType)
 			}
-			entityCounters[transaction["child_type"].(string)] = newCounter
-			fmt.Printf("Processed Add transaction: %s\n", transaction["transaction_id"])
+		} else {
+			fmt.Printf("Skipping file: %s\n", transaction["transaction_id"])
 		}
 	}
 
