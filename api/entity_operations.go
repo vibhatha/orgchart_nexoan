@@ -399,6 +399,18 @@ func (c *Client) RenameMinister(transaction map[string]interface{}, entityCounte
 	// Transfer each active department to the new minister
 	for _, rel := range oldRelations {
 		if rel.Name == "AS_DEPARTMENT" && rel.EndTime == "" {
+			// Get the department name using its ID
+			departmentResults, err := c.SearchEntities(&models.SearchCriteria{
+				ID: rel.RelatedEntityID,
+			})
+			if err != nil {
+				return 0, fmt.Errorf("failed to search for department: %w", err)
+			}
+
+			if len(departmentResults) == 0 {
+				return 0, fmt.Errorf("failed to find department with ID: %s", rel.RelatedEntityID)
+			}
+
 			// Create new relationship between new minister and department
 			newRelationship := &models.Entity{
 				ID: newMinisterID,
@@ -424,7 +436,7 @@ func (c *Client) RenameMinister(transaction map[string]interface{}, entityCounte
 			// Terminate the old relationship
 			terminateTransaction := map[string]interface{}{
 				"parent":      oldName,
-				"child":       rel.RelatedEntityID,
+				"child":       departmentResults[0].Name,
 				"date":        dateStr,
 				"parent_type": "minister",
 				"child_type":  "department",

@@ -64,6 +64,7 @@ type Relationship struct {
 
 // SearchCriteria represents the search parameters for entity search
 type SearchCriteria struct {
+	ID         string `json:"id,omitempty"`
 	Kind       *Kind  `json:"kind,omitempty"`
 	Name       string `json:"name,omitempty"`
 	Created    string `json:"created,omitempty"`
