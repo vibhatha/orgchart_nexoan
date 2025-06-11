@@ -154,8 +154,6 @@ func (c *Client) SearchEntities(criteria *models.SearchCriteria) ([]models.Searc
 		return nil, fmt.Errorf("failed to marshal search criteria: %w", err)
 	}
 
-	fmt.Printf("[SearchEntities] Request payload: %s\n", string(jsonData))
-
 	resp, err := c.httpClient.Post(
 		fmt.Sprintf("%s/search", c.queryURL),
 		"application/json",
@@ -175,18 +173,14 @@ func (c *Client) SearchEntities(criteria *models.SearchCriteria) ([]models.Searc
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
-	fmt.Printf("[SearchEntities] Raw response: %s\n", string(bodyBytes))
 
 	var response models.SearchResponse
 	if err := json.Unmarshal(bodyBytes, &response); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	fmt.Printf("[SearchEntities] Initial response: %+v\n", response.Body)
-
 	// Decode the name field for each search result
 	for i := range response.Body {
-		fmt.Printf("[SearchEntities] Processing name: %s\n", response.Body[i].Name)
 		// The name is already a JSON string containing a protobuf object
 		var protobufName struct {
 			TypeURL string `json:"typeUrl"`
@@ -196,19 +190,14 @@ func (c *Client) SearchEntities(criteria *models.SearchCriteria) ([]models.Searc
 			return nil, fmt.Errorf("failed to unmarshal protobuf name: %w", err)
 		}
 
-		fmt.Printf("[SearchEntities] Protobuf name: %+v\n", protobufName)
-
 		// Convert hex to string
 		decoded, err := hex.DecodeString(protobufName.Value)
 		if err != nil {
-			fmt.Printf("[SearchEntities] Hex decode error for value: %s\n", protobufName.Value)
 			return nil, fmt.Errorf("failed to decode hex value: %w", err)
 		}
 		response.Body[i].Name = string(decoded)
-		fmt.Printf("[SearchEntities] Decoded name: %s\n", response.Body[i].Name)
 	}
 
-	fmt.Printf("[SearchEntities] Final response: %+v\n", response.Body)
 	return response.Body, nil
 }
 
@@ -268,7 +257,6 @@ func (c *Client) GetRelatedEntities(entityID string, query *models.Relationship)
 	// URL encode the entity ID to handle special characters like slashes
 	encodedID := url.QueryEscape(entityID)
 
-	fmt.Printf("[GetRelatedEntities] Request payload: %s\n", string(jsonData))
 	resp, err := c.httpClient.Post(
 		fmt.Sprintf("%s/%s/relations", c.queryURL, encodedID),
 		"application/json",
@@ -297,7 +285,6 @@ func (c *Client) GetAllRelatedEntities(entityID string) ([]models.Relationship, 
 	// URL encode the entity ID to handle special characters like slashes
 	encodedID := url.QueryEscape(entityID)
 
-	fmt.Printf("[GetAllRelatedEntities] Request payload: %s\n", encodedID)
 	resp, err := c.httpClient.Post(
 		fmt.Sprintf("%s/%s/allrelations", c.queryURL, encodedID),
 		"application/json",

@@ -39,7 +39,6 @@ func (c *Client) ProcessTransactions(dataDir string, processType string) error {
 		if !file.IsDir() && strings.HasSuffix(file.Name(), ".csv") {
 			// Extract file type from filename (e.g., "ADD" from "2403-38_ADD.csv" or "ADD.csv")
 			fileName := strings.TrimSuffix(file.Name(), ".csv")
-			// fmt.Printf("Debug: Processing file: %s, fileName: %s\n", file.Name(), fileName)
 			fileType := "ADD" // Default to ADD
 			if strings.Contains(fileName, "TERMINATE") {
 				fileType = "TERMINATE"
@@ -50,7 +49,6 @@ func (c *Client) ProcessTransactions(dataDir string, processType string) error {
 			} else if strings.Contains(fileName, "RENAME") {
 				fileType = "RENAME"
 			}
-			// fmt.Printf("Debug: Determined fileType: %s\n", fileType)
 
 			// Load transactions from the CSV file
 			transactions, err := loadTransactions(filepath.Join(dataDir, file.Name()), fileType)
@@ -60,8 +58,6 @@ func (c *Client) ProcessTransactions(dataDir string, processType string) error {
 			allTransactions = append(allTransactions, transactions...)
 		}
 	}
-
-	fmt.Printf("Number of transactions: %d\n", len(allTransactions))
 
 	// Sort transactions by transaction_id, handling numeric parts correctly
 	sort.Slice(allTransactions, func(i, j int) bool {
@@ -102,7 +98,6 @@ func (c *Client) ProcessTransactions(dataDir string, processType string) error {
 			childType := transaction["child_type"].(string)
 			if (processType == "organisation" && (childType == "minister" || childType == "department")) ||
 				(processType == "person" && childType == "citizen") {
-				//var newCounter int
 				var err error
 
 				if processType == "person" && childType == "citizen" {

@@ -70,9 +70,7 @@ func (c *Client) AddOrgEntity(transaction map[string]interface{}, entityCounters
 		Name: parent,
 	}
 
-	fmt.Printf("[AddEntity] Searching for parent with criteria: %+v\n", searchCriteria)
 	searchResults, err := c.SearchEntities(searchCriteria)
-	fmt.Printf("[AddEntity] Search Results: %+v\n", searchResults)
 	if err != nil {
 		return 0, fmt.Errorf("failed to search for parent entity: %w", err)
 	}
@@ -82,7 +80,6 @@ func (c *Client) AddOrgEntity(transaction map[string]interface{}, entityCounters
 	}
 
 	parentID := searchResults[0].ID
-	fmt.Println("Parent ID: ", parentID)
 
 	// Create the new child entity
 	childEntity := &models.Entity{
@@ -211,8 +208,6 @@ func (c *Client) TerminateOrgEntity(transaction map[string]interface{}) error {
 		return fmt.Errorf("failed to get relationship: %w", err)
 	}
 
-	fmt.Printf("[TerminateOrgEntity] Relationships: for %s and %s with type %s: %+v\n", parentID, childID, relType, relations)
-
 	// FIXME: Is it possible to have more than one active relationship? For orgchart case only it won't happen
 	// Find the active relationship (no end time)
 	var activeRel *models.Relationship
@@ -278,8 +273,6 @@ func (c *Client) MoveDepartment(transaction map[string]interface{}) error {
 	}
 	newParentID := newParentResults[0].ID
 
-	fmt.Printf("Found new parent entity with ID: %s\n", newParentID)
-
 	// Get the department (child) entity ID
 	childResults, err := c.SearchEntities(&models.SearchCriteria{
 		Kind: &models.Kind{
@@ -296,7 +289,6 @@ func (c *Client) MoveDepartment(transaction map[string]interface{}) error {
 	}
 	childID := childResults[0].ID
 
-	fmt.Printf("Found new child entity with ID: %s\n", childID)
 	// Create new relationship between new minister and department
 	newRelationship := &models.Entity{
 		ID: newParentID,
@@ -328,8 +320,6 @@ func (c *Client) MoveDepartment(transaction map[string]interface{}) error {
 		"child_type":  "department",
 		"rel_type":    "AS_DEPARTMENT",
 	}
-
-	fmt.Printf("Terminating relationship with transaction: %+v\n", terminateTransaction)
 
 	err = c.TerminateOrgEntity(terminateTransaction)
 	if err != nil {
@@ -679,9 +669,7 @@ func (c *Client) AddPersonEntity(transaction map[string]interface{}, entityCount
 		Name: parent,
 	}
 
-	fmt.Printf("[AddPersonEntity] Searching for parent with criteria: %+v\n", searchCriteria)
 	searchResults, err := c.SearchEntities(searchCriteria)
-	fmt.Printf("[AddPersonEntity] Search Results: %+v\n", searchResults)
 	if err != nil {
 		return 0, fmt.Errorf("failed to search for parent entity: %w", err)
 	}
@@ -691,7 +679,6 @@ func (c *Client) AddPersonEntity(transaction map[string]interface{}, entityCount
 	}
 
 	parentID := searchResults[0].ID
-	fmt.Println("Parent ID: ", parentID)
 
 	// Check if person already exists (search across all person types)
 	personSearchCriteria := &models.SearchCriteria{
@@ -844,8 +831,6 @@ func (c *Client) TerminatePersonEntity(transaction map[string]interface{}) error
 		return fmt.Errorf("failed to get relationship: %w", err)
 	}
 
-	fmt.Printf("[TerminateOrgEntity] Relationships: for %s and %s with type %s: %+v\n", parentID, childID, relType, relations)
-
 	// FIXME: Is it possible to have more than one active relationship? For orgchart case only it won't happen
 	// Find the active relationship (no end time)
 	var activeRel *models.Relationship
@@ -915,8 +900,6 @@ func (c *Client) MovePerson(transaction map[string]interface{}) error {
 	}
 	newParentID := newParentResults[0].ID
 
-	fmt.Printf("Found new parent entity with ID: %s\n", newParentID)
-
 	// Get the department (child) entity ID
 	childResults, err := c.SearchEntities(&models.SearchCriteria{
 		Kind: &models.Kind{
@@ -933,7 +916,6 @@ func (c *Client) MovePerson(transaction map[string]interface{}) error {
 	}
 	childID := childResults[0].ID
 
-	fmt.Printf("Found new child entity with ID: %s\n", childID)
 	// Create new relationship between new minister and person
 	newRelationship := &models.Entity{
 		ID: newParentID,
@@ -965,8 +947,6 @@ func (c *Client) MovePerson(transaction map[string]interface{}) error {
 		"child_type":  "citizen",
 		"rel_type":    relType,
 	}
-
-	fmt.Printf("Terminating relationship with transaction: %+v\n", terminateTransaction)
 
 	err = c.TerminatePersonEntity(terminateTransaction)
 	if err != nil {
