@@ -254,7 +254,6 @@ func (c *Client) MoveDepartment(transaction map[string]interface{}) error {
 	oldParent := transaction["old_parent"].(string)
 	child := transaction["child"].(string)
 	dateStr := transaction["date"].(string)
-	relType := transaction["type"].(string)
 
 	// Parse the date
 	date, err := time.Parse("2006-01-02", strings.TrimSpace(dateStr))
@@ -309,7 +308,7 @@ func (c *Client) MoveDepartment(transaction map[string]interface{}) error {
 					StartTime:       dateISO,
 					EndTime:         "",
 					ID:              fmt.Sprintf("%s_%s", newParentID, childID),
-					Name:            relType,
+					Name:            "AS_DEPARTMENT",
 				},
 			},
 		},
@@ -327,7 +326,7 @@ func (c *Client) MoveDepartment(transaction map[string]interface{}) error {
 		"date":        dateStr,
 		"parent_type": "minister",
 		"child_type":  "department",
-		"rel_type":    relType,
+		"rel_type":    "AS_DEPARTMENT",
 	}
 
 	fmt.Printf("Terminating relationship with transaction: %+v\n", terminateTransaction)
