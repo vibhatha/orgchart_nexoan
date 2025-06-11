@@ -63,7 +63,7 @@ func TestCreatePeople(t *testing.T) {
 		}
 
 		// Use AddEntity to create the minister
-		_, err := client.AddEntity(transaction, ministerEntityCounters)
+		_, err := client.AddOrgEntity(transaction, ministerEntityCounters)
 		assert.NoError(t, err)
 
 		// Update the counter for the next iteration
@@ -264,7 +264,7 @@ func TestCreatePeopleWithManyMinisters(t *testing.T) {
 		}
 
 		// Use AddEntity to create the minister
-		_, err := client.AddEntity(transaction, ministerEntityCounters)
+		_, err := client.AddOrgEntity(transaction, ministerEntityCounters)
 		assert.NoError(t, err)
 
 		// Update the counter for the next iteration
@@ -456,7 +456,7 @@ func TestTerminatePerson(t *testing.T) {
 		}
 
 		// Use AddEntity to create the minister
-		_, err := client.AddEntity(transaction, ministerEntityCounters)
+		_, err := client.AddOrgEntity(transaction, ministerEntityCounters)
 		assert.NoError(t, err)
 
 		// Update the counter for the next iteration
@@ -684,7 +684,7 @@ func TestTerminateMultipleMinistersForPerson(t *testing.T) {
 		}
 
 		// Use AddEntity to create the minister
-		_, err := client.AddEntity(transaction, ministerEntityCounters)
+		_, err := client.AddOrgEntity(transaction, ministerEntityCounters)
 		assert.NoError(t, err)
 
 		// Update the counter for the next iteration
@@ -912,7 +912,7 @@ func TestMovePerson(t *testing.T) {
 		}
 
 		// Use AddEntity to create the minister
-		_, err := client.AddEntity(transaction, ministerEntityCounters)
+		_, err := client.AddOrgEntity(transaction, ministerEntityCounters)
 		assert.NoError(t, err)
 
 		// Update the counter for the next iteration
@@ -1112,7 +1112,7 @@ func TestSwapMultiplePeople(t *testing.T) {
 			"transaction_id": tc.transactionID,
 		}
 
-		_, err := client.AddEntity(transaction, ministerEntityCounters)
+		_, err := client.AddOrgEntity(transaction, ministerEntityCounters)
 		assert.NoError(t, err)
 		ministerEntityCounters[tc.childType]++
 

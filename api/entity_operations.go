@@ -139,7 +139,7 @@ func (c *Client) AddOrgEntity(transaction map[string]interface{}, entityCounters
 	return entityCounter, nil
 }
 
-// TerminateEntity terminates a specific relationship between parent and child at a given date
+// TerminateOrgEntity terminates a specific relationship between parent and child at a given date
 func (c *Client) TerminateOrgEntity(transaction map[string]interface{}) error {
 	// Extract details from the transaction
 	parent := transaction["parent"].(string)
@@ -211,7 +211,7 @@ func (c *Client) TerminateOrgEntity(transaction map[string]interface{}) error {
 		return fmt.Errorf("failed to get relationship: %w", err)
 	}
 
-	fmt.Printf("[TerminateEntity] Relationships: for %s and %s with type %s: %+v\n", parentID, childID, relType, relations)
+	fmt.Printf("[TerminateOrgEntity] Relationships: for %s and %s with type %s: %+v\n", parentID, childID, relType, relations)
 
 	// FIXME: Is it possible to have more than one active relationshoip? For orgchart case only it won't happen
 	// Find the active relationship (no end time)
@@ -845,7 +845,7 @@ func (c *Client) TerminatePersonEntity(transaction map[string]interface{}) error
 		return fmt.Errorf("failed to get relationship: %w", err)
 	}
 
-	fmt.Printf("[TerminateEntity] Relationships: for %s and %s with type %s: %+v\n", parentID, childID, relType, relations)
+	fmt.Printf("[TerminateOrgEntity] Relationships: for %s and %s with type %s: %+v\n", parentID, childID, relType, relations)
 
 	// FIXME: Is it possible to have more than one active relationshoip? For orgchart case only it won't happen
 	// Find the active relationship (no end time)
@@ -1059,7 +1059,7 @@ func (c *Client) MovePerson1(transaction map[string]interface{}) error {
 
 	fmt.Printf("Terminating relationship with transaction: %+v\n", terminateTransaction)
 
-	err = c.TerminateEntity(terminateTransaction)
+	err = c.TerminateOrgEntity(terminateTransaction)
 	if err != nil {
 		return fmt.Errorf("failed to terminate old relationship: %w", err)
 	}
