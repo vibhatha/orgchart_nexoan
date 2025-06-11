@@ -712,6 +712,7 @@ func (c *Client) AddPersonEntity(transaction map[string]interface{}, entityCount
 	}
 
 	var childID string
+	entityCounter := 0
 	if len(personResults) == 1 {
 		// Person exists, use existing ID
 		childID = personResults[0].ID
@@ -779,7 +780,7 @@ func (c *Client) AddPersonEntity(transaction map[string]interface{}, entityCount
 		return 0, fmt.Errorf("failed to update parent entity: %w", err)
 	}
 
-	return entityCounters[childType] + 1, nil
+	return entityCounter, nil
 }
 
 // TerminatePersonEntity terminates a specific relationship between Person type entity and another entity at a given date
