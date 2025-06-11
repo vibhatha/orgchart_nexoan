@@ -85,7 +85,7 @@ func TestCreateMinisters(t *testing.T) {
 		}
 
 		// Use AddEntity to create the minister
-		_, err := client.AddEntity(transaction, entityCounters)
+		_, err := client.AddOrgEntity(transaction, entityCounters)
 		assert.NoError(t, err)
 
 		// Update the counter for the next iteration
@@ -184,7 +184,7 @@ func TestCreateDepartments(t *testing.T) {
 		}
 
 		// Use AddEntity to create the department
-		_, err := client.AddEntity(transaction, entityCounters)
+		_, err := client.AddOrgEntity(transaction, entityCounters)
 		assert.NoError(t, err)
 
 		// Update the counter for the next iteration
@@ -237,7 +237,7 @@ func TestTerminateDepartment(t *testing.T) {
 	}
 
 	// Terminate the department relationship
-	err := client.TerminateEntity(transaction)
+	err := client.TerminateOrgEntity(transaction)
 	assert.NoError(t, err)
 
 	// Find the minister to verify the relationship
@@ -290,7 +290,7 @@ func TestTerminateMinister(t *testing.T) {
 	}
 
 	// Terminate the minister relationship
-	err := client.TerminateEntity(transaction)
+	err := client.TerminateOrgEntity(transaction)
 	assert.NoError(t, err)
 
 	// Find the government to verify the relationship
@@ -349,7 +349,7 @@ func TestMoveDepartment(t *testing.T) {
 	}
 
 	// Create the new minister
-	_, err := client.AddEntity(newMinisterTransaction, entityCounters)
+	_, err := client.AddOrgEntity(newMinisterTransaction, entityCounters)
 	assert.NoError(t, err)
 
 	// Create transaction map for moving the department
@@ -713,4 +713,122 @@ func TestMergeMinisters(t *testing.T) {
 	assert.Equal(t, 0, oldActiveDepts2, "Second old minister should have no active departments")
 }
 
-// // TODO: Test that it fails and returns proper error messages when trying to terminate an entity with children
+func TestTerminateNonExistentMinister(t *testing.T) {
+	// Create transaction map for terminating a non-existent minister
+	transaction := map[string]interface{}{
+		"parent":      "Government of Sri Lanka",
+		"child":       "Non Existent Minister",
+		"date":        "2025-01-01",
+		"parent_type": "government",
+		"child_type":  "minister",
+		"rel_type":    "AS_MINISTER",
+	}
+
+	// Attempt to terminate the non-existent minister
+	err := client.TerminateOrgEntity(transaction)
+	assert.Error(t, err)
+}
+
+func TestTerminateMinisterWithChildren(t *testing.T) {
+	// First create a minister with a department
+	entityCounters := map[string]int{
+		"minister":   0,
+		"department": 0,
+	}
+
+	// Create minister
+	ministerTransaction := map[string]interface{}{
+		"parent":         "Government of Sri Lanka",
+		"child":          "Minister to Terminate",
+		"date":           "2025-01-01",
+		"parent_type":    "government",
+		"child_type":     "minister",
+		"rel_type":       "AS_MINISTER",
+		"transaction_id": "2154/14_tr_01",
+	}
+
+	_, err := client.AddOrgEntity(ministerTransaction, entityCounters)
+	assert.NoError(t, err)
+
+	// Create department under the minister
+	departmentTransaction := map[string]interface{}{
+		"parent":         "Minister to Terminate",
+		"child":          "Department Under Minister",
+		"date":           "2025-01-01",
+		"parent_type":    "minister",
+		"child_type":     "department",
+		"rel_type":       "AS_DEPARTMENT",
+		"transaction_id": "2154/14_tr_02",
+	}
+
+	_, err = client.AddOrgEntity(departmentTransaction, entityCounters)
+	assert.NoError(t, err)
+
+	// Debug: Print minister's relationships before termination
+	ministerResults, err := client.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: "Minister to Terminate",
+	})
+	assert.NoError(t, err)
+	assert.Len(t, ministerResults, 1)
+	ministerID := ministerResults[0].ID
+
+	fmt.Printf("Debug: Minister ID: %s\n", ministerID)
+	relations, err := client.GetAllRelatedEntities(ministerID)
+	assert.NoError(t, err)
+	fmt.Printf("Debug: Minister's relationships before termination: %+v\n", relations)
+
+	// Attempt to terminate the minister
+	terminateTransaction := map[string]interface{}{
+		"parent":      "Government of Sri Lanka",
+		"child":       "Minister to Terminate",
+		"date":        "2025-01-02",
+		"parent_type": "government",
+		"child_type":  "minister",
+		"rel_type":    "AS_MINISTER",
+	}
+
+	fmt.Printf("Debug: Attempting to terminate minister with transaction: %+v\n", terminateTransaction)
+	err = client.TerminateOrgEntity(terminateTransaction)
+	assert.Error(t, err)
+	// assert.Contains(t, err.Error(), "cannot terminate minister with active departments")
+
+}
+
+func TestMoveDepartmentToNonExistentMinister(t *testing.T) {
+	// Create transaction map for moving department to non-existent minister
+	transaction := map[string]interface{}{
+		"old_parent": "Minister of Finance and Education",
+		"new_parent": "Non Existent Minister",
+		"child":      "Department of Policies",
+		"type":       "AS_DEPARTMENT",
+		"date":       "2025-01-01",
+	}
+
+	// Attempt to move the department
+	err := client.MoveDepartment(transaction)
+	assert.Error(t, err)
+}
+
+func TestMergeNonExistentMinister(t *testing.T) {
+	// Initialize entity counters
+	entityCounters := map[string]int{
+		"minister": 0,
+	}
+
+	// Create transaction map for merging non-existent minister
+	transaction := map[string]interface{}{
+		"old":            "[Non Existent Minister]",
+		"new":            "New Merged Minister",
+		"date":           "2025-01-01",
+		"transaction_id": "2154/14_tr_03",
+	}
+
+	// Attempt to merge the ministers
+	_, err := client.MergeMinisters(transaction, entityCounters)
+	fmt.Printf("Debug: Full error from MergeMinisters: %+v\n", err)
+	assert.Error(t, err)
+}

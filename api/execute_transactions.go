@@ -73,7 +73,7 @@ func (c *Client) ProcessTransactions(dataDir string) error {
 	for _, transaction := range allTransactions {
 		// For now, only process ADD transactions
 		if transaction["file_type"] == "ADD" {
-			newCounter, err := c.AddEntity(transaction, entityCounters)
+			newCounter, err := c.AddOrgEntity(transaction, entityCounters)
 			if err != nil {
 				return fmt.Errorf("failed to process add transaction %s: %w", transaction["transaction_id"], err)
 			}

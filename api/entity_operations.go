@@ -33,9 +33,9 @@ func (c *Client) CreateGovernmentNode() (*models.Entity, error) {
 	return createdEntity, nil
 }
 
-// AddEntity creates a new entity and establishes its relationship with a parent entity.
+// AddOrgEntity creates a new entity and establishes its relationship with a parent entity.
 // Assumes the parent entity already exists.
-func (c *Client) AddEntity(transaction map[string]interface{}, entityCounters map[string]int) (int, error) {
+func (c *Client) AddOrgEntity(transaction map[string]interface{}, entityCounters map[string]int) (int, error) {
 	// Extract details from the transaction
 	parent := transaction["parent"].(string)
 	child := transaction["child"].(string)
@@ -140,7 +140,7 @@ func (c *Client) AddEntity(transaction map[string]interface{}, entityCounters ma
 }
 
 // TerminateEntity terminates a specific relationship between parent and child at a given date
-func (c *Client) TerminateEntity(transaction map[string]interface{}) error {
+func (c *Client) TerminateOrgEntity(transaction map[string]interface{}) error {
 	// Extract details from the transaction
 	parent := transaction["parent"].(string)
 	child := transaction["child"].(string)
@@ -184,6 +184,22 @@ func (c *Client) TerminateEntity(transaction map[string]interface{}) error {
 		return fmt.Errorf("child entity not found: %s", child)
 	}
 	childID := childResults[0].ID
+
+	// If we're terminating a minister, check for active departments
+	if childType == "minister" {
+		// Get all relationships for the minister
+		relations, err := c.GetAllRelatedEntities(childID)
+		if err != nil {
+			return fmt.Errorf("failed to get minister's relationships: %w", err)
+		}
+
+		// Check for active departments
+		for _, rel := range relations {
+			if rel.Name == "AS_DEPARTMENT" && rel.EndTime == "" {
+				return fmt.Errorf("cannot terminate minister with active departments")
+			}
+		}
+	}
 
 	// Get the specific relationship that is still active (no end date) -> this should give us the relationship(s) active for dateISO
 	relations, err := c.GetRelatedEntities(parentID, &models.Relationship{
@@ -317,7 +333,7 @@ func (c *Client) MoveDepartment(transaction map[string]interface{}) error {
 
 	fmt.Printf("Terminating relationship with transaction: %+v\n", terminateTransaction)
 
-	err = c.TerminateEntity(terminateTransaction)
+	err = c.TerminateOrgEntity(terminateTransaction)
 	if err != nil {
 		return fmt.Errorf("failed to terminate old relationship: %w", err)
 	}
@@ -369,7 +385,7 @@ func (c *Client) RenameMinister(transaction map[string]interface{}, entityCounte
 	}
 
 	// Create the new minister
-	newMinisterCounter, err := c.AddEntity(addEntityTransaction, entityCounters)
+	newMinisterCounter, err := c.AddOrgEntity(addEntityTransaction, entityCounters)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create new minister: %w", err)
 	}
@@ -443,7 +459,7 @@ func (c *Client) RenameMinister(transaction map[string]interface{}, entityCounte
 				"rel_type":    "AS_DEPARTMENT",
 			}
 
-			err = c.TerminateEntity(terminateTransaction)
+			err = c.TerminateOrgEntity(terminateTransaction)
 			if err != nil {
 				return 0, fmt.Errorf("failed to terminate old department relationship: %w", err)
 			}
@@ -460,7 +476,7 @@ func (c *Client) RenameMinister(transaction map[string]interface{}, entityCounte
 		"rel_type":    relType,
 	}
 
-	err = c.TerminateEntity(terminateGovTransaction)
+	err = c.TerminateOrgEntity(terminateGovTransaction)
 	if err != nil {
 		return 0, fmt.Errorf("failed to terminate old minister's government relationship: %w", err)
 	}
@@ -522,7 +538,7 @@ func (c *Client) MergeMinisters(transaction map[string]interface{}, entityCounte
 		"transaction_id": transactionID,
 	}
 
-	newMinisterCounter, err := c.AddEntity(addEntityTransaction, entityCounters)
+	newMinisterCounter, err := c.AddOrgEntity(addEntityTransaction, entityCounters)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create new minister: %w", err)
 	}
@@ -606,7 +622,7 @@ func (c *Client) MergeMinisters(transaction map[string]interface{}, entityCounte
 			"rel_type":    "AS_MINISTER",
 		}
 
-		err = c.TerminateEntity(terminateGovTransaction)
+		err = c.TerminateOrgEntity(terminateGovTransaction)
 		if err != nil {
 			return 0, fmt.Errorf("failed to terminate old minister's government relationship: %w", err)
 		}
