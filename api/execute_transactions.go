@@ -37,19 +37,25 @@ func (c *Client) ProcessTransactions(dataDir string, processType string) error {
 	var allTransactions []map[string]interface{}
 	for _, file := range files {
 		if !file.IsDir() && strings.HasSuffix(file.Name(), ".csv") {
-			// Check if file contains ADD in its name (either as _ADD.csv or ADD.csv)
+			// Extract file type from filename (e.g., "ADD" from "2403-38_ADD.csv" or "ADD.csv")
 			fileName := strings.TrimSuffix(file.Name(), ".csv")
-			if fileName == "ADD" || strings.HasSuffix(fileName, "_ADD") {
-				// Extract file type from filename (e.g., "ADD" from "2403-38_ADD.csv" or "ADD.csv")
-				fileType := "ADD" // All files with ADD are considered ADD transactions
-
-				// Load transactions from the CSV file
-				transactions, err := loadTransactions(filepath.Join(dataDir, file.Name()), fileType)
-				if err != nil {
-					return fmt.Errorf("failed to load transactions from %s: %w", file.Name(), err)
-				}
-				allTransactions = append(allTransactions, transactions...)
+			fileType := "ADD" // Default to ADD
+			if strings.Contains(fileName, "_TERMINATE") {
+				fileType = "TERMINATE"
+			} else if strings.Contains(fileName, "_MOVE") {
+				fileType = "MOVE"
+			} else if strings.Contains(fileName, "_MERGE") {
+				fileType = "MERGE"
+			} else if strings.Contains(fileName, "_RENAME") {
+				fileType = "RENAME"
 			}
+
+			// Load transactions from the CSV file
+			transactions, err := loadTransactions(filepath.Join(dataDir, file.Name()), fileType)
+			if err != nil {
+				return fmt.Errorf("failed to load transactions from %s: %w", file.Name(), err)
+			}
+			allTransactions = append(allTransactions, transactions...)
 		}
 	}
 
@@ -86,36 +92,85 @@ func (c *Client) ProcessTransactions(dataDir string, processType string) error {
 
 	// Process transactions in order
 	for _, transaction := range allTransactions {
-		// For now, only process ADD transactions
-		if transaction["file_type"] == "ADD" {
+		fmt.Printf("Processing transaction: %s (Type: %s)\n", transaction["transaction_id"], transaction["file_type"])
+
+		switch transaction["file_type"] {
+		case "ADD":
 			// Check if the transaction type matches the process type
 			childType := transaction["child_type"].(string)
-			fmt.Printf("Processing transaction: %s\n", transaction["transaction_id"])
-			fmt.Printf("Child type: %s\n", childType)
-			fmt.Printf("Process type: %s\n", processType)
-
 			if (processType == "organisation" && (childType == "minister" || childType == "department")) ||
 				(processType == "person" && childType == "citizen") {
-				var newCounter int
+				//var newCounter int
 				var err error
 
 				if processType == "person" && childType == "citizen" {
-					newCounter, err = c.AddPersonEntity(transaction, entityCounters)
+					entityCounters[childType], err = c.AddPersonEntity(transaction, entityCounters)
 				} else {
-					newCounter, err = c.AddOrgEntity(transaction, entityCounters)
+					entityCounters[childType], err = c.AddOrgEntity(transaction, entityCounters)
 				}
 
 				if err != nil {
 					return fmt.Errorf("failed to process add transaction %s: %w", transaction["transaction_id"], err)
 				}
-				entityCounters[childType] = newCounter
+				//entityCounters[childType] = newCounter
 				fmt.Printf("Processed Add transaction: %s\n", transaction["transaction_id"])
 			} else {
 				fmt.Printf("Skipping transaction %s: type %s does not match process type %s\n",
 					transaction["transaction_id"], childType, processType)
 			}
-		} else {
-			fmt.Printf("Skipping file: %s\n", transaction["transaction_id"])
+
+		case "TERMINATE":
+			if processType == "organisation" {
+				err := c.TerminateOrgEntity(transaction)
+				if err != nil {
+					return fmt.Errorf("failed to process terminate transaction %s: %w", transaction["transaction_id"], err)
+				}
+				fmt.Printf("Processed Terminate transaction: %s\n", transaction["transaction_id"])
+			} else if processType == "person" {
+				err := c.TerminatePersonEntity(transaction)
+				if err != nil {
+					return fmt.Errorf("failed to process terminate transaction %s: %w", transaction["transaction_id"], err)
+				}
+				fmt.Printf("Processed Terminate transaction: %s\n", transaction["transaction_id"])
+			}
+
+		case "MOVE":
+			if processType == "organisation" {
+				err := c.MoveDepartment(transaction)
+				if err != nil {
+					return fmt.Errorf("failed to process move transaction %s: %w", transaction["transaction_id"], err)
+				}
+				fmt.Printf("Processed Move transaction: %s\n", transaction["transaction_id"])
+			} else if processType == "person" {
+				err := c.MovePerson(transaction)
+				if err != nil {
+					return fmt.Errorf("failed to process move transaction %s: %w", transaction["transaction_id"], err)
+				}
+				fmt.Printf("Processed Move transaction: %s\n", transaction["transaction_id"])
+			}
+
+		case "MERGE":
+			if processType == "organisation" {
+				newCounter, err := c.MergeMinisters(transaction, entityCounters)
+				if err != nil {
+					return fmt.Errorf("failed to process merge transaction %s: %w", transaction["transaction_id"], err)
+				}
+				entityCounters["minister"] = newCounter
+				fmt.Printf("Processed Merge transaction: %s\n", transaction["transaction_id"])
+			}
+
+		case "RENAME":
+			if processType == "organisation" {
+				newCounter, err := c.RenameMinister(transaction, entityCounters)
+				if err != nil {
+					return fmt.Errorf("failed to process rename transaction %s: %w", transaction["transaction_id"], err)
+				}
+				entityCounters["minister"] = newCounter
+				fmt.Printf("Processed Rename transaction: %s\n", transaction["transaction_id"])
+			}
+
+		default:
+			fmt.Printf("Skipping unknown transaction type: %s\n", transaction["file_type"])
 		}
 	}
 
