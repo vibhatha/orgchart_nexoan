@@ -296,7 +296,7 @@ func (c *Client) MoveDepartment(transaction map[string]interface{}) error {
 		return fmt.Errorf("child entity not found: %s", child)
 	}
 	childID := childResults[0].ID
-	
+
 	fmt.Printf("Found new child entity with ID: %s\n", childID)
 	// Create new relationship between new minister and department
 	newRelationship := &models.Entity{
@@ -782,7 +782,7 @@ func (c *Client) AddPersonEntity(transaction map[string]interface{}, entityCount
 	return entityCounters[childType] + 1, nil
 }
 
-// TerminateEntity terminates a specific relationship between parent and child at a given date
+// TerminatePersonEntity terminates a specific relationship between Person type entity and another entity at a given date
 func (c *Client) TerminatePersonEntity(transaction map[string]interface{}) error {
 	// Extract details from the transaction
 	parent := transaction["parent"].(string)
@@ -800,14 +800,14 @@ func (c *Client) TerminatePersonEntity(transaction map[string]interface{}) error
 	dateISO := date.Format(time.RFC3339)
 
 	// Get the parent entity ID
-	parentSearchCriteria := &models.SearchCriteria{
+	searchCriteria := &models.SearchCriteria{
 		Kind: &models.Kind{
 			Major: "Organisation",
 			Minor: parentType,
 		},
 		Name: parent,
 	}
-	parentResults, err := c.SearchEntities(parentSearchCriteria)
+	parentResults, err := c.SearchEntities(searchCriteria)
 	if err != nil {
 		return fmt.Errorf("failed to search for parent entity: %w", err)
 	}
@@ -825,7 +825,6 @@ func (c *Client) TerminatePersonEntity(transaction map[string]interface{}) error
 		Name: child,
 	}
 
-	fmt.Printf("[TerminatePersonEntity] Searching for child with criteria: %+v\n", childSearchCriteria)
 	childResults, err := c.SearchEntities(childSearchCriteria)
 	if err != nil {
 		return fmt.Errorf("failed to search for child entity: %w", err)
@@ -851,7 +850,7 @@ func (c *Client) TerminatePersonEntity(transaction map[string]interface{}) error
 	// Find the active relationship (no end time)
 	var activeRel *models.Relationship
 	for _, rel := range relations {
-		if rel.EndTime == "" {
+		if rel.RelatedEntityID == childID && rel.EndTime == "" {
 			activeRel = &rel
 			break
 		}
@@ -862,13 +861,6 @@ func (c *Client) TerminatePersonEntity(transaction map[string]interface{}) error
 	}
 
 	// Update the relationship to set the end date
-	fmt.Printf("[TerminatePersonEntity] Updating relationship: %+v\n", activeRel)
-	fmt.Printf("[TerminatePersonEntity] Parent ID: %s\n", parentID)
-	fmt.Printf("[TerminatePersonEntity] Child ID: %s\n", childID)
-	fmt.Printf("[TerminatePersonEntity] Date: %s\n", dateISO)
-	fmt.Printf("[TerminatePersonEntity] Relationship: %+v\n", activeRel.RelatedEntityID)
-	fmt.Printf("[TerminatePersonEntity] Relationship ID: %s\n", activeRel.ID)
-
 	_, err = c.UpdateEntity(parentID, &models.Entity{
 		ID: parentID,
 		Relationships: []models.RelationshipEntry{
@@ -888,8 +880,104 @@ func (c *Client) TerminatePersonEntity(transaction map[string]interface{}) error
 	return nil
 }
 
-// MovePerson moves a person from one portfolio to another
+// MovePerson moves a person from one portfolio to another (limits functionality to only minister)
+// TODO: Take the parent type from the transaction such that this function can be used generic
+//
+//	for moving person from any institution to another
 func (c *Client) MovePerson(transaction map[string]interface{}) error {
+	// Extract details from the transaction
+	newParent := transaction["new_parent"].(string)
+	oldParent := transaction["old_parent"].(string)
+	child := transaction["child"].(string)
+	dateStr := transaction["date"].(string)
+	relType := transaction["type"].(string)
+
+	// Parse the date
+	date, err := time.Parse("2006-01-02", strings.TrimSpace(dateStr))
+	if err != nil {
+		return fmt.Errorf("failed to parse date: %w", err)
+	}
+	dateISO := date.Format(time.RFC3339)
+
+	// Get the new minister (parent) entity ID
+	newParentResults, err := c.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: newParent,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to search for new parent entity: %w", err)
+	}
+	if len(newParentResults) == 0 {
+		return fmt.Errorf("new parent entity not found: %s", newParent)
+	}
+	newParentID := newParentResults[0].ID
+
+	fmt.Printf("Found new parent entity with ID: %s\n", newParentID)
+
+	// Get the department (child) entity ID
+	childResults, err := c.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Person",
+			Minor: "citizen",
+		},
+		Name: child,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to search for child entity: %w", err)
+	}
+	if len(childResults) == 0 {
+		return fmt.Errorf("child entity not found: %s", child)
+	}
+	childID := childResults[0].ID
+
+	fmt.Printf("Found new child entity with ID: %s\n", childID)
+	// Create new relationship between new minister and person
+	newRelationship := &models.Entity{
+		ID: newParentID,
+		Relationships: []models.RelationshipEntry{
+			{
+				Key: fmt.Sprintf("%s_%s", newParentID, childID),
+				Value: models.Relationship{
+					RelatedEntityID: childID,
+					StartTime:       dateISO,
+					EndTime:         "",
+					ID:              fmt.Sprintf("%s_%s", newParentID, childID),
+					Name:            relType,
+				},
+			},
+		},
+	}
+
+	_, err = c.UpdateEntity(newParentID, newRelationship)
+	if err != nil {
+		return fmt.Errorf("failed to create new relationship: %w", err)
+	}
+
+	// Terminate the old relationship
+	terminateTransaction := map[string]interface{}{
+		"parent":      oldParent,
+		"child":       child,
+		"date":        dateStr,
+		"parent_type": "minister",
+		"child_type":  "citizen",
+		"rel_type":    relType,
+	}
+
+	fmt.Printf("Terminating relationship with transaction: %+v\n", terminateTransaction)
+
+	err = c.TerminatePersonEntity(terminateTransaction)
+	if err != nil {
+		return fmt.Errorf("failed to terminate old relationship: %w", err)
+	}
+
+	return nil
+}
+
+// MovePerson moves a person from one portfolio to another
+func (c *Client) MovePerson1(transaction map[string]interface{}) error {
 	// Extract details from the transaction
 	newParent := transaction["new_parent"].(string)
 	oldParent := transaction["old_parent"].(string)
