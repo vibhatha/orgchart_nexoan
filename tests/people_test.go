@@ -855,3 +855,196 @@ func TestTerminateMultipleMinistersForPerson(t *testing.T) {
 	}
 	assert.True(t, found, "Should find the active relationship with Tourism minister")
 }
+
+func TestMovePerson(t *testing.T) {
+	// Initialize entity counters
+	ministerEntityCounters := map[string]int{
+		"minister": 0,
+	}
+	personEntityCounters := map[string]int{
+		"citizen": 0,
+	}
+
+	// Test cases for creating ministers
+	ministersTestCases := []struct {
+		transactionID string
+		parent        string
+		parentType    string
+		child         string
+		childType     string
+		relType       string
+		date          string
+	}{
+		{
+			transactionID: "2127/14_tr_01",
+			parent:        "Government of Sri Lanka",
+			parentType:    "government",
+			child:         "Minister of Agriculture and Food Security",
+			childType:     "minister",
+			relType:       "AS_MINISTER",
+			date:          "2019-11-01",
+		},
+		{
+			transactionID: "2127/14_tr_02",
+			parent:        "Government of Sri Lanka",
+			parentType:    "government",
+			child:         "Minister of Environment and Climate Change",
+			childType:     "minister",
+			relType:       "AS_MINISTER",
+			date:          "2019-11-01",
+		},
+	}
+
+	// Create each minister
+	for _, tc := range ministersTestCases {
+		t.Logf("Creating minister: %s", tc.child)
+
+		// Create transaction map for AddEntity
+		transaction := map[string]interface{}{
+			"parent":         tc.parent,
+			"child":          tc.child,
+			"date":           tc.date,
+			"parent_type":    tc.parentType,
+			"child_type":     tc.childType,
+			"rel_type":       tc.relType,
+			"transaction_id": tc.transactionID,
+		}
+
+		// Use AddEntity to create the minister
+		_, err := client.AddEntity(transaction, ministerEntityCounters)
+		assert.NoError(t, err)
+
+		// Update the counter for the next iteration
+		ministerEntityCounters[tc.childType]++
+
+		// Verify the minister was created
+		searchCriteria := &models.SearchCriteria{
+			Kind: &models.Kind{
+				Major: "Organisation",
+				Minor: tc.childType,
+			},
+			Name: tc.child,
+		}
+
+		results, err := client.SearchEntities(searchCriteria)
+		assert.NoError(t, err)
+		assert.Len(t, results, 1)
+		assert.Equal(t, tc.child, results[0].Name)
+	}
+
+	// Create a person with relationship to the first minister
+	personName := "Robert Johnson"
+	peopleTestCases := []struct {
+		transactionID string
+		parent        string
+		parentType    string
+		child         string
+		childType     string
+		relType       string
+		date          string
+	}{
+		{
+			transactionID: "2065/19_tr_01",
+			parent:        "Minister of Agriculture and Food Security",
+			parentType:    "minister",
+			child:         personName,
+			childType:     "citizen",
+			relType:       "AS_APPOINTED",
+			date:          "2019-11-01",
+		},
+	}
+
+	// Create the person and their relationship
+	for _, tc := range peopleTestCases {
+		t.Logf("Creating person relationship with minister: %s", tc.parent)
+
+		transaction := map[string]interface{}{
+			"parent":         tc.parent,
+			"child":          tc.child,
+			"date":           tc.date,
+			"parent_type":    tc.parentType,
+			"child_type":     tc.childType,
+			"rel_type":       tc.relType,
+			"transaction_id": tc.transactionID,
+		}
+
+		_, err := client.AddPersonEntity(transaction, personEntityCounters)
+		assert.NoError(t, err)
+	}
+
+	// Verify the person was created
+	personResults, err := client.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Person",
+			Minor: "citizen",
+		},
+		Name: personName,
+	})
+	assert.NoError(t, err)
+	assert.Len(t, personResults, 1)
+	personID := personResults[0].ID
+
+	// Create transaction map for moving the person from one minister to another
+	transaction := map[string]interface{}{
+		"old_parent": "Minister of Agriculture and Food Security",
+		"new_parent": "Minister of Environment and Climate Change",
+		"child":      personName,
+		"type":       "AS_APPOINTED",
+		"date":       "2020-01-01",
+	}
+
+	// Move the person
+	err = client.MovePerson(transaction)
+	assert.NoError(t, err)
+
+	// Find the old minister to verify the old relationship is terminated
+	oldMinisterResults, err := client.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: "Minister of Agriculture and Food Security",
+	})
+	assert.NoError(t, err)
+	assert.Len(t, oldMinisterResults, 1)
+	oldMinisterID := oldMinisterResults[0].ID
+
+	// Verify the old relationship is terminated
+	oldRelations, err := client.GetAllRelatedEntities(oldMinisterID)
+	assert.NoError(t, err)
+	found := false
+	for _, rel := range oldRelations {
+		if rel.RelatedEntityID == personID && rel.Name == "AS_APPOINTED" {
+			assert.Equal(t, "2020-01-01T00:00:00Z", rel.EndTime)
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find the terminated old relationship")
+
+	// Find the new minister to verify the new relationship
+	newMinisterResults, err := client.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: "Minister of Environment and Climate Change",
+	})
+	assert.NoError(t, err)
+	assert.Len(t, newMinisterResults, 1)
+	newMinisterID := newMinisterResults[0].ID
+
+	// Verify the new relationship exists
+	newRelations, err := client.GetAllRelatedEntities(newMinisterID)
+	assert.NoError(t, err)
+	found = false
+	for _, rel := range newRelations {
+		if rel.RelatedEntityID == personID && rel.Name == "AS_APPOINTED" {
+			assert.Equal(t, "2020-01-01T00:00:00Z", rel.StartTime)
+			assert.Equal(t, "", rel.EndTime) // Should be active (no end time)
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find the new relationship")
+}
