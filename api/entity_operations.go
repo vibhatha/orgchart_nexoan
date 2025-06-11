@@ -489,3 +489,150 @@ func (c *Client) RenameMinister(transaction map[string]interface{}, entityCounte
 
 	return newMinisterCounter, nil
 }
+
+// MergeMinisters merges multiple ministers into a new minister
+func (c *Client) MergeMinisters(transaction map[string]interface{}, entityCounters map[string]int) (int, error) {
+	// Extract details from the transaction
+	oldMinistersStr := transaction["old"].(string)
+	newMinister := transaction["new"].(string)
+	dateStr := transaction["date"].(string)
+	transactionID := transaction["transaction_id"].(string)
+
+	// Parse the date
+	date, err := time.Parse("2006-01-02", strings.TrimSpace(dateStr))
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse date: %w", err)
+	}
+	dateISO := date.Format(time.RFC3339)
+
+	// Parse old ministers list
+	oldMinisters := strings.Split(strings.Trim(oldMinistersStr, "[]"), ",")
+	for i := range oldMinisters {
+		oldMinisters[i] = strings.TrimSpace(oldMinisters[i])
+	}
+
+	// 1. Create new minister using AddEntity
+	addEntityTransaction := map[string]interface{}{
+		"parent":         "Government of Sri Lanka",
+		"child":          newMinister,
+		"date":           dateStr,
+		"parent_type":    "government",
+		"child_type":     "minister",
+		"rel_type":       "AS_MINISTER",
+		"transaction_id": transactionID,
+	}
+
+	newMinisterCounter, err := c.AddEntity(addEntityTransaction, entityCounters)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create new minister: %w", err)
+	}
+
+	// Get the new minister's ID
+	newMinisterResults, err := c.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: newMinister,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to search for new minister: %w", err)
+	}
+	if len(newMinisterResults) == 0 {
+		return 0, fmt.Errorf("new minister not found: %s", newMinister)
+	}
+	newMinisterID := newMinisterResults[0].ID
+
+	// For each old minister
+	for _, oldMinister := range oldMinisters {
+		// Get the old minister's ID
+		oldMinisterResults, err := c.SearchEntities(&models.SearchCriteria{
+			Kind: &models.Kind{
+				Major: "Organisation",
+				Minor: "minister",
+			},
+			Name: oldMinister,
+		})
+		if err != nil {
+			return 0, fmt.Errorf("failed to search for old minister: %w", err)
+		}
+		if len(oldMinisterResults) == 0 {
+			return 0, fmt.Errorf("old minister not found: %s", oldMinister)
+		}
+		oldMinisterID := oldMinisterResults[0].ID
+
+		// 2. Move old minister's departments to new minister
+		oldRelations, err := c.GetAllRelatedEntities(oldMinisterID)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get old minister's relationships: %w", err)
+		}
+
+		for _, rel := range oldRelations {
+			if rel.Name == "AS_DEPARTMENT" && rel.EndTime == "" {
+				// Get the department name using its ID
+				departmentResults, err := c.SearchEntities(&models.SearchCriteria{
+					ID: rel.RelatedEntityID,
+				})
+				if err != nil {
+					return 0, fmt.Errorf("failed to search for department: %w", err)
+				}
+				if len(departmentResults) == 0 {
+					return 0, fmt.Errorf("failed to find department with ID: %s", rel.RelatedEntityID)
+				}
+
+				// Move department to new minister
+				moveTransaction := map[string]interface{}{
+					"old_parent": oldMinister,
+					"new_parent": newMinister,
+					"child":      departmentResults[0].Name,
+					"type":       "AS_DEPARTMENT",
+					"date":       dateStr,
+				}
+
+				err = c.MoveDepartment(moveTransaction)
+				if err != nil {
+					return 0, fmt.Errorf("failed to move department: %w", err)
+				}
+			}
+		}
+
+		// 3. Terminate gov -> old minister relationship
+		terminateGovTransaction := map[string]interface{}{
+			"parent":      "Government of Sri Lanka",
+			"child":       oldMinister,
+			"date":        dateStr,
+			"parent_type": "government",
+			"child_type":  "minister",
+			"rel_type":    "AS_MINISTER",
+		}
+
+		err = c.TerminateEntity(terminateGovTransaction)
+		if err != nil {
+			return 0, fmt.Errorf("failed to terminate old minister's government relationship: %w", err)
+		}
+
+		// 4. Create old minister -> new minister MERGED_INTO relationship
+		mergedIntoRelationship := &models.Entity{
+			ID: oldMinisterID,
+			Relationships: []models.RelationshipEntry{
+				{
+					Key: fmt.Sprintf("%s_%s", oldMinisterID, newMinisterID),
+					Value: models.Relationship{
+						RelatedEntityID: newMinisterID,
+						StartTime:       dateISO,
+						EndTime:         "",
+						ID:              fmt.Sprintf("%s_%s", oldMinisterID, newMinisterID),
+						Name:            "MERGED_INTO",
+					},
+				},
+			},
+		}
+
+		_, err = c.UpdateEntity(oldMinisterID, mergedIntoRelationship)
+		if err != nil {
+			return 0, fmt.Errorf("failed to create MERGED_INTO relationship: %w", err)
+		}
+	}
+
+	return newMinisterCounter, nil
+}

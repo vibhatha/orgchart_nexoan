@@ -548,4 +548,169 @@ func TestRenameMinister(t *testing.T) {
 	assert.Greater(t, newActiveDepts, 0, "New minister should have active departments")
 }
 
+func TestMergeMinisters(t *testing.T) {
+	// Initialize entity counters
+	entityCounters := map[string]int{
+		"minister": 0, // Since we already have 3 ministers from previous tests
+	}
+
+	// Create transaction map for merging ministers
+	transaction := map[string]interface{}{
+		"old":            "[Minister of Finance, Minister of Education]",
+		"new":            "Minister of Finance and Education",
+		"date":           "2025-01-01",
+		"transaction_id": "2154/13_tr_01",
+	}
+
+	// Merge the ministers
+	newMinisterCounter, err := client.MergeMinisters(transaction, entityCounters)
+	assert.NoError(t, err)
+	assert.Greater(t, newMinisterCounter, 0)
+
+	// Find the new minister to verify it exists
+	newMinisterResults, err := client.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: "Minister of Finance and Education",
+	})
+	assert.NoError(t, err)
+	assert.Len(t, newMinisterResults, 1)
+	newMinisterID := newMinisterResults[0].ID
+
+	// Find the old ministers
+	oldMinisterResults, err := client.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: "Minister of Finance",
+	})
+	assert.NoError(t, err)
+	assert.Len(t, oldMinisterResults, 1)
+	oldMinister1ID := oldMinisterResults[0].ID
+
+	oldMinisterResults, err = client.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: "Minister of Education",
+	})
+	assert.NoError(t, err)
+	assert.Len(t, oldMinisterResults, 1)
+	oldMinister2ID := oldMinisterResults[0].ID
+
+	// Verify the MERGED_INTO relationships exist
+	oldRelations1, err := client.GetAllRelatedEntities(oldMinister1ID)
+	assert.NoError(t, err)
+	found := false
+	for _, rel := range oldRelations1 {
+		if rel.RelatedEntityID == newMinisterID && rel.Name == "MERGED_INTO" {
+			assert.Equal(t, "2025-01-01T00:00:00Z", rel.StartTime)
+			assert.Equal(t, "", rel.EndTime) // Should be active (no end time)
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find the MERGED_INTO relationship for first minister")
+
+	oldRelations2, err := client.GetAllRelatedEntities(oldMinister2ID)
+	assert.NoError(t, err)
+	found = false
+	for _, rel := range oldRelations2 {
+		if rel.RelatedEntityID == newMinisterID && rel.Name == "MERGED_INTO" {
+			assert.Equal(t, "2025-01-01T00:00:00Z", rel.StartTime)
+			assert.Equal(t, "", rel.EndTime) // Should be active (no end time)
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find the MERGED_INTO relationship for second minister")
+
+	// Verify the old ministers' government relationships are terminated
+	governmentResults, err := client.SearchEntities(&models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "government",
+		},
+		Name: "Government of Sri Lanka",
+	})
+	assert.NoError(t, err)
+	assert.Len(t, governmentResults, 1)
+	governmentID := governmentResults[0].ID
+
+	govRelations, err := client.GetAllRelatedEntities(governmentID)
+	assert.NoError(t, err)
+	found = false
+	for _, rel := range govRelations {
+		if rel.RelatedEntityID == oldMinister1ID && rel.Name == "AS_MINISTER" {
+			assert.Equal(t, "2025-01-01T00:00:00Z", rel.EndTime)
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find the terminated government relationship for first minister")
+
+	found = false
+	for _, rel := range govRelations {
+		if rel.RelatedEntityID == oldMinister2ID && rel.Name == "AS_MINISTER" {
+			assert.Equal(t, "2025-01-01T00:00:00Z", rel.EndTime)
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find the terminated government relationship for second minister")
+
+	// Verify the new minister has the government relationship
+	found = false
+	for _, rel := range govRelations {
+		if rel.RelatedEntityID == newMinisterID && rel.Name == "AS_MINISTER" {
+			assert.Equal(t, "2025-01-01T00:00:00Z", rel.StartTime)
+			assert.Equal(t, "", rel.EndTime) // Should be active (no end time)
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find the new government relationship")
+
+	// Verify all departments were transferred
+	newDeptRelations, err := client.GetAllRelatedEntities(newMinisterID)
+	assert.NoError(t, err)
+
+	// Count active department relationships
+	newActiveDepts := 0
+	for _, rel := range newDeptRelations {
+		if rel.Name == "AS_DEPARTMENT" && rel.EndTime == "" {
+			newActiveDepts++
+		}
+	}
+
+	// Should have at least 2 departments (one from each old minister)
+	assert.GreaterOrEqual(t, newActiveDepts, 2, "New minister should have at least 2 active departments")
+
+	// Verify old ministers have no active departments
+	oldDeptRelations1, err := client.GetAllRelatedEntities(oldMinister1ID)
+	assert.NoError(t, err)
+	oldDeptRelations2, err := client.GetAllRelatedEntities(oldMinister2ID)
+	assert.NoError(t, err)
+
+	oldActiveDepts1 := 0
+	oldActiveDepts2 := 0
+	for _, rel := range oldDeptRelations1 {
+		if rel.Name == "AS_DEPARTMENT" && rel.EndTime == "" {
+			oldActiveDepts1++
+		}
+	}
+	for _, rel := range oldDeptRelations2 {
+		if rel.Name == "AS_DEPARTMENT" && rel.EndTime == "" {
+			oldActiveDepts2++
+		}
+	}
+
+	assert.Equal(t, 0, oldActiveDepts1, "First old minister should have no active departments")
+	assert.Equal(t, 0, oldActiveDepts2, "Second old minister should have no active departments")
+}
+
 // // TODO: Test that it fails and returns proper error messages when trying to terminate an entity with children
