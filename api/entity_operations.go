@@ -213,7 +213,7 @@ func (c *Client) TerminateOrgEntity(transaction map[string]interface{}) error {
 
 	fmt.Printf("[TerminateOrgEntity] Relationships: for %s and %s with type %s: %+v\n", parentID, childID, relType, relations)
 
-	// FIXME: Is it possible to have more than one active relationshoip? For orgchart case only it won't happen
+	// FIXME: Is it possible to have more than one active relationship? For orgchart case only it won't happen
 	// Find the active relationship (no end time)
 	var activeRel *models.Relationship
 	for _, rel := range relations {
@@ -847,7 +847,7 @@ func (c *Client) TerminatePersonEntity(transaction map[string]interface{}) error
 
 	fmt.Printf("[TerminateOrgEntity] Relationships: for %s and %s with type %s: %+v\n", parentID, childID, relType, relations)
 
-	// FIXME: Is it possible to have more than one active relationshoip? For orgchart case only it won't happen
+	// FIXME: Is it possible to have more than one active relationship? For orgchart case only it won't happen
 	// Find the active relationship (no end time)
 	var activeRel *models.Relationship
 	for _, rel := range relations {
