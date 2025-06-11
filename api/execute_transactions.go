@@ -39,16 +39,18 @@ func (c *Client) ProcessTransactions(dataDir string, processType string) error {
 		if !file.IsDir() && strings.HasSuffix(file.Name(), ".csv") {
 			// Extract file type from filename (e.g., "ADD" from "2403-38_ADD.csv" or "ADD.csv")
 			fileName := strings.TrimSuffix(file.Name(), ".csv")
+			// fmt.Printf("Debug: Processing file: %s, fileName: %s\n", file.Name(), fileName)
 			fileType := "ADD" // Default to ADD
-			if strings.Contains(fileName, "_TERMINATE") {
+			if strings.Contains(fileName, "TERMINATE") {
 				fileType = "TERMINATE"
-			} else if strings.Contains(fileName, "_MOVE") {
+			} else if strings.Contains(fileName, "MOVE") {
 				fileType = "MOVE"
-			} else if strings.Contains(fileName, "_MERGE") {
+			} else if strings.Contains(fileName, "MERGE") {
 				fileType = "MERGE"
-			} else if strings.Contains(fileName, "_RENAME") {
+			} else if strings.Contains(fileName, "RENAME") {
 				fileType = "RENAME"
 			}
+			// fmt.Printf("Debug: Determined fileType: %s\n", fileType)
 
 			// Load transactions from the CSV file
 			transactions, err := loadTransactions(filepath.Join(dataDir, file.Name()), fileType)
