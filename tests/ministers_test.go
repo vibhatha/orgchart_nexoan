@@ -832,3 +832,60 @@ func TestMergeNonExistentMinister(t *testing.T) {
 	fmt.Printf("Debug: Full error from MergeMinisters: %+v\n", err)
 	assert.Error(t, err)
 }
+
+func TestCreateDuplicateMinister(t *testing.T) {
+	// Initialize entity counters
+	entityCounters := map[string]int{
+		"minister": 0,
+	}
+
+	// Create transaction map for first minister
+	firstMinisterTransaction := map[string]interface{}{
+		"parent":         "Government of Sri Lanka",
+		"child":          "Duplicate Minister",
+		"date":           "2025-01-01",
+		"parent_type":    "government",
+		"child_type":     "minister",
+		"rel_type":       "AS_MINISTER",
+		"transaction_id": "2154/15_tr_01",
+	}
+
+	// Create the first minister
+	firstMinister, err := client.AddOrgEntity(firstMinisterTransaction, entityCounters)
+	assert.NoError(t, err)
+	assert.NotNil(t, firstMinister)
+
+	// Update counter for second attempt
+	entityCounters["minister"]++
+
+	// Create transaction map for second minister with same name
+	secondMinisterTransaction := map[string]interface{}{
+		"parent":         "Government of Sri Lanka",
+		"child":          "Duplicate Minister",
+		"date":           "2025-01-02",
+		"parent_type":    "government",
+		"child_type":     "minister",
+		"rel_type":       "AS_MINISTER",
+		"transaction_id": "2154/15_tr_02",
+	}
+
+	// Create the second minister with same name
+	secondMinister, err := client.AddOrgEntity(secondMinisterTransaction, entityCounters)
+	assert.NoError(t, err, "Should be able to create minister with same name but different ID")
+	assert.NotNil(t, secondMinister)
+
+	// Verify both ministers exist and have different IDs
+	searchCriteria := &models.SearchCriteria{
+		Kind: &models.Kind{
+			Major: "Organisation",
+			Minor: "minister",
+		},
+		Name: "Duplicate Minister",
+	}
+
+	results, err := client.SearchEntities(searchCriteria)
+	assert.NoError(t, err)
+	assert.Len(t, results, 2, "Should find two ministers with this name")
+	assert.NotEqual(t, results[0].ID, results[1].ID, "Ministers should have different IDs")
+
+}
